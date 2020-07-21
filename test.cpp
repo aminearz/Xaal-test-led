@@ -14,8 +14,7 @@ NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 0, 300 * 1000);
 #include <ArduinoJson.h>
 
 StaticJsonDocument<1024> Data;
-StaticJsonDocument<1024> xAALMessage;
-StaticJsonDocument<1024> xAALPayload;
+StaticJsonDocument<1024> Data_Payload;
 
 #include <Crypto.h>
 #include <ChaChaPoly.h>
@@ -70,6 +69,10 @@ void loop(){
   uint16_t size;
   base64_decodestate b64_state;
 
+   if (WiFi.status() != WL_CONNECTED) {
+    Serial.print("# Error: no network\n");
+    return;
+  }
 
   // if there's data available, read a packet
   //Serial.println(mcast.available());
@@ -93,38 +96,53 @@ void loop(){
     const char* targets = Data["targets"];
     Serial.print("targets : ");
     Serial.println(targets);
+    
+    JsonArray timestamp = Data["timestamp"];
+    Serial.print("timestamp : ");
+    long sec = timestamp[0];
+    long usec = timestamp[1];
+    Serial.print(sec);
+    Serial.print(" , ");
+    Serial.println(usec);
 
-    // additionnal data
-    chacha.addAuthData(targets,2);
 
-    // Nonce 
-
-    nonce.sec =__bswap_64(sec);
-    nonce.usec =__bswap_32(usec);
-    chacha.setIV(nonce.buf,12);
-
+  
     // let's base64 decode the payload
     // add one byte for NULL end, if not free() will crash.
-    size = strlen(Data["payload"]);
+
+    const char* payload = Data["payload"];
+
+    size = strlen(payload) + IETF_ABITES;
     b64_len = base64_decode_expected_len(size)+1; 
     b64 = (char *) malloc(b64_len);
     base64_init_decodestate(&b64_state);
-    b64_len = base64_decode_block(Data["payload"], size, b64, &b64_state);
+    b64_len = base64_decode_block(payload, size, b64, &b64_state);
 
+     // Init chacha cipher 
+    chacha.clear();
+    chacha.setKey(XAAL_KEY,32);
+
+    // additionnal data
+    chacha.addAuthData("[]",2);
+
+    // Nonce 
     
+    nonce.sec = __bswap_64(sec);
+    nonce.usec = __bswap_32(usec);
+    chacha.setIV(nonce.buf,12);
+  
+  
     pjson  = (uint8_t *) malloc(sizeof(uint8_t) * (size));
-    chacha.decrypt(pjson ,(const uint8_t*)b64,size);
+    chacha.decrypt(pjson ,(const uint8_t*)b64,strlen(b64));
+    chacha.computeTag(pjson,sizeof(pjson));
 
+    deserializeJson(Data_Payload,pjson);
 
-    //Serial.println(pjson);
-
-    deserializeJson(xAALMessage,pjson);
-
-    const char* header = xAALMessage["header"]; //header
+    const char* header = Data_Payload["header"]; //header
     Serial.print("header : ");
     Serial.println(header);
 
-    const char* body = xAALMessage["body"];
+    const char* body = Data_Payload ["body"];
     Serial.print("body : ");
     Serial.println(body);
 
