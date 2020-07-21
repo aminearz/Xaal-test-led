@@ -134,7 +134,7 @@ void loop(){
   
     pjson  = (uint8_t *) malloc(sizeof(uint8_t) * (size));
     chacha.decrypt(pjson ,(const uint8_t*)b64,strlen(b64));
-    chacha.computeTag(pjson,sizeof(pjson));
+    //chacha.computeTag(pjson,sizeof(pjson));
 
     deserializeJson(Data_Payload,pjson);
 
